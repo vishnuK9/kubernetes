@@ -13,7 +13,7 @@ systemctl daemon-reload
 systemctl restart kubelet
 
 ## Check the kubelet status to ensure it is running.##
-systemctl status kubelet
+# systemctl status kubelet
 
 ## Generate one kubeadm configuration file for each host that will have an etcd member running on it using the following script. ##
 # Update HOST0, HOST1 and HOST2 with the IPs of your hosts
