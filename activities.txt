@@ -481,3 +481,42 @@ Renew kubernetes pki after expired:
 #     Last State:
 #       Reason:   Error
 #       Exit Code: 137
+
+##### GCp vpc sharing ######
+
+- Shared VPC allows you to export subnets from a VPC network in a host project to other service projects in the same organization.
+- Shared VPC allows an organization to connect resources from multiple projects to a common Virtual Private Cloud (VPC) network so that they can communicate with each other securely and efficiently by using internal IP addresses from that network.
+- When you use Shared VPC, you designate a project as a host project and attach one or more other service projects to it. The VPC networks in the host project are called Shared VPC networks. Eligible resources from service projects can use subnets in the Shared VPC network.
+- Shared VPC connects projects within the same organization, Participating host and service projects cannot belong to different organizations. Linked projects can be in the same or different folders, but if they are in different folders the admin must have Shared VPC Admin rights to both folders. 
+- A host project contains one or more Shared VPC networks. A Shared VPC Admin must first enable a project as a host project. After that, a Shared VPC Admin can attach one or more service projects to it.
+- Services running in a service project can use Shared VPC to communicate with resources running in the other service projects.
+- a project that does not participate in Shared VPC is called a standalone project. 
+- You can share all host project subnets. If you select this option, then any new subnets created in the host project, including subnets in new networks, will also be shared.
+- You can specify individual subnets to share. If you share subnets individually, then only those subnets are shared unless you manually change the list.
+
+# Organization policy constraints
+- Organization policy constraints can protect Shared VPC resources at the project, folder, or organization level. The following sections describe each policy.
+
+- Folders are nodes in the Cloud Platform Resource Hierarchy. A folder can contain projects, other folders, or a combination of both. Organizations can use folders to group projects under the organization node in a hierarchy. For example, your organization might contain multiple departments, each with its own set of Google Cloud resources. Folders allow you to group these resources on a per-department basis. Folders are used to group resources that share common IAM policies. While a folder can contain multiple folders or resources, a given folder or resource can have exactly one parent.
+In the diagram below, the organization, "Company", has folders representing two departments, "Dept X" and "Dept Y", and a folder, "Shared Infrastructure", for items that might be common to both departments. Under "Dept Y", they have organized into two teams, and within the team folders, they further organize by products. The folder for "Product 1" further contains three projects, each with the resources needed for the project. This provides them with a high degree of flexibility in assigning IAM policies and Organization policies at the right level of granularity.
+
+introduction:
+
+hello, I am Vishnu
+I have 2+ years of experience in devops tools.
+Past 3 years i have bee working in Infosys as Systems Engineer.
+I have completed my graduation from Mumbai University in 2019 at Mumbai and after that i started my employment journey with Infosys.
+Coming to my skill set i have hands oon experience on linux Windows servers, terraform with AWS cloud, docker, op prem kubernetes, Jenkins for CI CD integrations and Prometheus Grafana ELK for monitoring.
+i have good knowledge on kubernetes and terraform.
+
+Coming to roles and responsibilies, 
+my role were to provision cluster for deployments using kubeadm, kubespray services and manually as well. Also provision dynamic nfs storage for storage classes, Renewing and taking care of CA certificates. Scheduling cluster backup using velero which is a backup tool. Monitoring the Cluster for making sure nodes are in healthy and ready state and pods are also running healthy and serving traffic. Appart from than we used RKE tools for cluster monitoring, MinIO for object storage, CertManager for TLS certificate renewal with LetsEncrypt Certificate Authority.
+
+we used prometheus grafana for monitoring nodes telemetry metrics, pods and deployment. And ELK for log management.
+
+We used Jenkins as CICD tool. Using Multi-branch pipeline we had integrated our code with development, testing, pre prod and production environment.  
+
+# we used multi-branch pipeline  
+# I have experience on continuous integration and contiuous delivery of deploying a product to the cluster
+# Writing jenkins pipeline for CI and CD of a project. apart from all this i also had the opportunity to take care of provisiong development and testing
+# we used multi-branch pipeline  
