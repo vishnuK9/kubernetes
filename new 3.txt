@@ -1,0 +1,437 @@
+################## Creating Highly Available Clusters with kubeadm #################
+
+setting ha proxy loadbalancer:
+
+apt update && apt install -y haproxy
+
+vim /etc/haproxy/haproxy.cfg
+frontend kubernetes-frontend
+    bind 10.182.0.2:6443
+    mode tcp
+    option tcplog
+    default_backend kubernetes-backend
+
+backend kubernetes-backend
+    mode tcp
+    option tcp-check
+    balance roundrobin
+    server master1 10.182.0.3:6443 check fall 3 rise 2
+    server master2 10.182.0.4:6443 check fall 3 rise 2
+	
+systemctl restart haproxy
+
+## install docker kubeadm kubelet kubectl on all the machines
+
+## Initialize the control plane:
+sudo kubeadm init --control-plane-endpoint "10.182.0.2:6443" --upload-certs --pod-network-cidr=192.168.0.0/16 --cri-socket=unix:///var/run/cri-dockerd.sock
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+## if you have multiple interfaces use the apiserver-advertise-address argument
+## eg : kubeadm init --control-plane-endpoint="10.182.0.2:6443" --upload-certs --apiserver-advertise-address=10.182.0.3 --pod-network-cidr=192.168.0.0/16
+
+## below command is used to join other control-plane into your cluster
+kubeadm join 10.182.0.2:6443 --token bps5m6.sqwkjtcmgon3l1rd --discovery-token-ca-cert-hash sha256:8684dc19b5ee0d6203524039c23b71777a6ec9b6cceadd8a07ea0244d924bf4f --control-plane --certificate-key fcef18a97a35a023d79f22ce261b97b15fb046b09bf058dbca70308fe66e09da --cri-socket=unix:///var/run/cri-dockerd.sock
+
+## below command for adding worker nodes to the cluster
+kubeadm join 10.182.0.2:6443 --token bps5m6.sqwkjtcmgon3l1rd \
+        --discovery-token-ca-cert-hash sha256:8684dc19b5ee0d6203524039c23b71777a6ec9b6cceadd8a07ea0244d924bf4f --cri-socket=unix:///var/run/cri-dockerd.sock
+		
+## deploying calico network addon cni plugin
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/tigera-operator.yaml
+curl https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/custom-resources.yaml -O
+kubectl create -f custom-resources.yaml
+
+mkdir ~/.kube
+scp root@10.182.0.3:/etc/kubernetes/admin.conf ~/.kube/config
+
+## to generate the join command to add additional master and worker
+kubeadm init phase upload-certs --upload-certs
+kubeadm token create --certificate-key <certificate-key> --print-join-command
+
+########### renaming a node in cluster #############
+
+drain the node.
+reset the kubeadm node
+rejoin the node as a new day
+
+########### Cluster Upgrade Process / upgrading a kubeadm cluster ############
+# if kube-apiserver is x then controller-manager , kube-scheduler can be at x-1 and kubelet, kubeproxy should be at x-2
+# only lastest 3 versions are supported by kubernetes
+# first you upgrade the master nodes and the worker nodes
+
+# start with a master node machine.
+kubeadm version
+yum upgrade -y kubeadm1.12.0
+kubeadm upgrade plan
+kubeadm upgrade apply v1.12.0 -y
+# below cmmd will show the server version upgraded to 12
+kubectl version --short 
+# below cmmd will show the kubelet version
+kubectl get nodes 
+# upgrading kubelet
+kubectl drain kmaster --ignore-daemonsets
+yum upgrade -y kubelet-1.12.0
+systemctl daemon-reload
+systemctl restart kubelet
+systemctl status kubelet
+kubectl uncordon kmaster
+
+# upgrading worker node
+kubectl drain kworker --ignore-daemonsets
+kubeadm upgrade node config --kubelet-version $(kubelet --version | cut -d ' ' -f 2)
+yum upgrade -y kubeadm-1.12.0 kubelet-1.12.0
+systemctl daemon-reload
+systemctl restart kubelet
+systemctl status kubeletj
+kubectl uncordon kworker
+
+###### Backup and restores ######
+# kubectl get ns -n namespaces -o yaml > backup.yaml one way
+# velero 
+# taking a backup of /var/lib/etcd 
+# ETCDCTL_API=3 etcdctl snapshot save/status/restore snapshot.db --endpoinsts --cacert --cert --key
+# reconfigure the etcd systemd file with new etcd location passed to the data-dir argument
+# do a systemctl daemon-reload , service etcd restart
+# etcdctl snapshot restore --date-dir /var/lib/etcd-backup /opt/snapshot.db
+# change the volume host path to new dat dir /var/lib/etcd-backup in /etc/kubernetes/etcd.yaml
+
+########### Running Jenkins in Kubernetes Cluster using Helm ###########
+
+########### Configuring Jenkins to connect to Kubernetes cluster ###########
+# installing Jenkins Debian Packages https://pkg.jenkins.io/debian-stable/
+curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo tee \
+    /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
+    https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
+    /etc/apt/sources.list.d/jenkins.list > /dev/null
+sudo apt-get update
+sudo apt-get install fontconfig openjdk-11-jre -y
+sudo apt-get install jenkins
+
+steps :
+Fill in the Kubernetes plugin configuration. In order to do that, you will open the Jenkins UI and navigate to Manage Jenkins -> Manage Nodes and Clouds -> Configure Clouds -> Add a new cloud -> Kubernetes and enter the Kubernetes URL and Jenkins URL appropriately, unless Jenkins is running in Kubernetes in which case the defaults work.
+
+Username/password
+Secret File (kubeconfig file)
+give pod label
+pod retention (default)
+in the Kubernetes Pod Template section, we need to configure the image that will be used to spin up the agent pod.
+jenkins/jnlp-slave:latest
+environment variables :
+	JENKINS_URL
+	<JENKINS_URL>
+- apply-save
+
+########## [ Kube 45 ] Velero - Backup & Restore Kubernetes Cluster ########
+
+
+########## setting up metallb loadbalancer ##########
+# go to the installatyion docs in https://metallb.universe.tf/configuration/
+# copy the menifest-native yaml
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml
+# Defining The IPs To Assign To The Load Balancer Services
+vim ipaddress-pool.yaml
+	apiVersion: metallb.io/v1beta1
+	kind: IPAddressPool
+	metadata:
+		name: first-pool
+		namespace: metallb-system
+	spec:
+		addresses:
+			- 10.182.0.10-10.182.0.20
+			
+kubectl apply -f ipaddress-pool.yaml
+
+# Announce The Service IPs. 
+# Now we need to announce these ipaddress in our cluster,thats where we use the L2 advertisement. 
+
+vim L2-advertisement.yaml
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: example
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - first-pool
+  
+kubectl apply -f L2-advertisement.yaml
+kubectl describe l2advertisements.metallb.io example -n metallb-system
+
+########## Deploy and Manage MinIO Storage on Kubernetes ##########
+# Kubernetes etcd database It can be backed up either manually or 
+# automatically, depending on your backup solution. The manual method is via # etcdctl snapshot save db command, which creates a single file with the name # snapshot
+# Step 1 – Create a StorageClass with WaitForFirstConsumer Binding Mode.
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: my-local-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+
+kubectl create -f storageClass.yml
+
+# Step 2 – Create Local Persistent Volume.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-local-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+  - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: my-local-storage
+  local:
+    path: /mnt/disk/vol1
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - node1
+		  
+kubectl create -f minio-pv.yml
+
+Step 3 – Create a Persistent Volume Claim
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  # This name uniquely identifies the PVC. This is used in deployment.
+  name: minio-pvc-claim
+spec:
+  # Read more about access modes here: http://kubernetes.io/docs/user-guide/persistent-volumes/#access-modes
+  storageClassName: my-local-storage
+  accessModes:
+    # The volume is mounted as read-write by Multiple nodes
+    - ReadWriteOnce
+  resources:
+    # This is the request for storage. Should be available in the cluster.
+    requests:
+      storage: 10Gi
+	
+kubectl create -f minio-pvc.yml
+
+# Step 4 – Create the MinIO Pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # This name uniquely identifies the Deployment
+  name: minio
+spec:
+  selector:
+    matchLabels:
+      app: minio # has to match .spec.template.metadata.labels
+  strategy:
+    # Specifies the strategy used to replace old Pods by new ones
+    # Refer: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        # This label is used as a selector in Service definition
+        app: minio
+    spec:
+      # Volumes used by this deployment
+      volumes:
+      - name: data
+        # This volume is based on PVC
+        persistentVolumeClaim:
+          # Name of the PVC created earlier
+          claimName: minio-pvc-claim
+      containers:
+      - name: minio
+        # Volume mounts for this container
+        volumeMounts:
+        # Volume 'data' is mounted to path '/data'
+        - name: data 
+          mountPath: /data
+        # Pulls the latest Minio image from Docker Hub
+        image: minio/minio
+        args:
+        - server
+        - /data
+        env:
+        # MinIO access key and secret key
+        - name: MINIO_ACCESS_KEY
+          value: "minio"
+        - name: MINIO_SECRET_KEY
+          value: "minio123"
+        ports:
+        - containerPort: 9000
+        # Readiness probe detects situations when MinIO server instance
+        # is not ready to accept traffic. Kubernetes doesn't forward
+        # traffic to the pod while readiness checks fail.
+        readinessProbe:
+          httpGet:
+            path: /minio/health/ready
+            port: 9000
+          initialDelaySeconds: 120
+          periodSeconds: 20
+        # Liveness probe detects situations where MinIO server instance
+        # is not working properly and needs restart. Kubernetes automatically
+        # restarts the pods if liveness checks fail.
+        livenessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+          initialDelaySeconds: 120
+          periodSeconds: 20
+		  
+kubectl create -f Minio-Dep.yml
+
+
+# Step 5 – Deploy the MinIO Service
+apiVersion: v1
+kind: Service
+metadata:
+  # This name uniquely identifies the service
+  name: minio-service
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 9000
+      targetPort: 9000
+      protocol: TCP
+  selector:
+    # Looks for labels `app:minio` in the namespace and applies the spec
+    app: minio
+	
+# Step 6 – Access the MinIO Web UI.
+
+ 
+###########  dynamic provisioning using nfs client provisioner  
+# setting up nfs server
+# On the host
+sudo apt update
+sudo apt install nfs-kernel-server -y
+sudo mkdir /var/nfs/general -p
+sudo chown nobody:nogroup /var/nfs/general
+sudo vim /etc/exports
+	/var/nfs/general    203.0.113.24(rw,sync,no_subtree_check)
+	/home       203.0.113.24(rw,sync,no_root_squash,no_subtree_check)
+sudo systemctl restart nfs-kernel-server
+sudo ufw status
+sudo ufw allow from 203.0.113.24 to any port nfs
+sudo ufw status
+
+# On the Client
+sudo apt update
+sudo apt install nfs-common -y
+sudo ufw status
+sudo mkdir -p /nfs/general
+sudo mount 10.182.0.9:/var/nfs/general /nfs/general
+df -h
+sudo touch /nfs/general/general.test
+ls -l /nfs/general/general.test
+
+# now you need to run deployments of nfs-client provisioner. which will create a storage class, after which you can use it as a persistent volume.
+# kubernetes-sigs/nfs-subdir-external-provisioner repo
+# go to deploy folder and apply the rbac,class,deployment yamls changing the nfs server ip and path of the volume to be mounted.
+kubectl apply -f .
+
+########## Renewing Kubernetes certificates with Kubeadm ##########
+# That time when your production cluster start sending erros because all of the cluster certificates go expired and you dont know what to do
+# you need to re create all that certificates and it was hard to replicate to do in production.
+
+kubeadm certs check-expiration
+cp -p /etc/kubernetes/*.conf /root/kube-backup
+cp -pr /etc/kubernetes/pki /root/kube-backup
+kubeadm certs renew all
+
+########## Cert Manager and Let's Encrypt ##########
+# lets encrypt is a free certificate authority, certificates for your web application
+# https://cert-manager.io/docs/installation/
+# cluster issuer
+helm upgrade --install ingress-nginx ingress-nginx \
+  --repo https://kubernetes.github.io/ingress-nginx \
+  --namespace ingress-nginx --create-namespace
+  
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.11.0/cert-manager.yaml
+
+# use the certificate issuer name in the annotations section of ingress resource so that it can serve 443 traffic, which will create a TLS certificate created provided by lets-encrypt.
+
+kubectl deploy nginx --image nginx
+kubectl expose deploy nginx --port 80
+
+########## CANARY deployment ##########
+
+	
+Kubectl drain node-1
+reboot
+kubectl uncordon node-1
+	
+########## ISSUES #########
+issues :
+Kubernetes: expired certificate
+	Each node within the Kubernetes cluster contains a config file for running kubelet ... /etc/kubernetes/kubelet.conf ... and this file is auto-generated by kubeadm. During this auto-generation, kubeadm uses /etc/kubernetes/ca.key to create a node-specific file, /etc/kubernetes/kubelet.conf, within which are two very important pieces ... client-certificate-data and client-key-data. My original thought process led me to believe that I needed to find the corresponding certificate file & key file, renew those files, convert both to base64, and use those values within kubelet.conf files across the cluster ... this thinking was not correct.
+
+	Instead, the fix was to use kubeadm to regenerate kubectl.conf on all nodes, as well as admin.conf, controller-manager.conf, and scheduler.conf on the cluster's master node. You'll need /etc/kubernetes/pki/ca.key on each node in order for your config files to include valid data for client-certificate-data and client-key-data.
+
+	Pro tip: make use of the --apiserver-advertise-address parameter to ensure your new config files contain the correct IP address of the node hosting the kube-apiserver service
+	
+Renew kubernetes pki after expired:
+
+NodePort service is not externally accessible via `port` number :
+	curl <node-ip>:<node-port>        # curl <node-ip>:31000
+	curl <service-ip>:<service-port>  # curl <svc-ip>:8090
+	curl <pod-ip>:<target-port>       # curl <pod-ip>:80
+
+Persistent Volume not found issues:
+	wrong storage class used, miss match in Storage class
+
+
+kubelet stopped working on worker nodes :
+	- Kubelet kube apiserver certificates expired.
+	
+
+etcd component not in running state after restore, need a restart. Delete the etcd pod , kubernetes will restore it
+
+curl service-name:node-port
+kubectl describe service and make sure the labels match with desired the pods labels
+check if the pod is in running and checking the number of restarts. do describe pod and check kubectl logs of the pod.
+check db service and db pod logs
+
+ImagePullBackOff : due to invalid image tag , or invalid permissions
+	how to Debug :
+		kubectl describe <podname>, if iamge is not successfully pulled, container wont be create and started which will cause ht error.
+	events like repository not found or no pull access
+	insufficient scope : authorisation failed
+	wrong tag or use full qualified image name
+	ensure your secrets and credentials are correct and they have access to the requried repo
+ErrImagePull
+RegistryUnavailable
+CrashLoopBackOff : 
+	- after your image is pulled successfully, you notice that it immediately ran into some error and casued crashLoopBackoff. Your runtime configuration is not working. Application in not able to find the config values. Liveness probe failue will also lead to crashllopbackoff.
+KillContainerError
+OOMKilled : 
+	- application is leaking memory.
+	- senior will send the threaddump using jstack to the developer and he will analyse and create better application.
+	- containerIq tool to log the OOM 
+	
+
+Pod in Pending stage :
+- Due to not enough resource quota on your namespace.
+- Due to not enough resource quota on your node.
+- kubectl describe deploy 
+- kubectl get events --sort-by=.metadata.creationTimestamp
+- volume node affinity conflict
+
+node disk pressure:
+- significantly most likely to run into this due to logs building up. kubernetes save logs of any running container and most recently exited container. If you have a long-running container with lot of logs, they may build up enough that it overloads the capacity of the node disk.
+- way to check it is using du command, by running daemon set on each node whcih executes teh du command.
+- from the output if you see its necessary application data, then you need to increase the node size or talk with developer
+-  or u may find that application that have produced a lot of files are no longer needed. in this case we can delete the files. cannot restart the pod to delete it data, because that works on only ephemeral volumes not persistent volumes.
+
+node not ready :
+	- lack of resources on the node, if there are lot of processes running taking too much of resources.
+	- kubectl describe nodes will show you about memory pressure, disk pressure, pid pressure under the condition section to see if resources are mission on the node.
+	- kubelet crashes or stops , it cannot communiicate to api server and marke node as not ready.
+	- if all the conditions are unkown, then it means kubelet is down
+	- misconfigure networking on the machine, under condition section check if NetworkUnavailable is true
