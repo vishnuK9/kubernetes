@@ -1,0 +1,5 @@
+SOC analysis using Scoutsuite
+Discovery calls for discussing application architecture and workflow
+Discovery sheet to note down discoveries
+Final Discovery presentation discussing practices and where improvements can be made.
+
