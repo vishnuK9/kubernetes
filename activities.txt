@@ -409,7 +409,7 @@ Renew kubernetes pki after expired:
 		wrong tag or use full qualified image name
 		ensure your secrets and credentials are correct and they have access to the requried repo
 # ErrImagePull :
-# RegistryUnavailable :
+# RegistryUnavailable : 
 # CrashLoopBackOff : 
 	- after your image is pulled successfully, you notice that it immediately ran into some error and casued crashLoopBackoff. Your runtime configuration is not working. Application in not able to find the config values. Liveness probe failue will also lead to crashllopbackoff.
 # KillContainerError
@@ -463,6 +463,20 @@ Renew kubernetes pki after expired:
 # kubectl get events -A | grep -i unhealthy | grep "Client.Timeout\|DeadlineExceeded"
 # This may occur if the health check did not respond within the specified timeout. To confirm that the service is healthy, check the health using the curl command.
 # curl -i http://10.45.0.20:15020/app-health/cray-bos/livez
+To troubleshoot and resolve the issue, you can take the following steps:
+
+Readiness Probe: A readiness probe is used to determine if a container is ready to handle requests. It is commonly used during rolling updates or when integrating with services like load balancers. If the readiness probe fails, Kubernetes considers the container as not ready to serve traffic, and it is temporarily removed from the load balancing pool. Once the probe starts passing, the container is added back to the pool.
+
+Liveness Probe: A liveness probe is used to check if a container is running properly. It helps Kubernetes detect and restart containers that are unresponsive or in a crashed state. If the liveness probe fails, Kubernetes restarts the container to attempt to recover it.
+Check the pod's logs: Examine the logs of the failing container to identify any error messages or abnormal behavior that could explain the probe failure.
+
+Review the probe configuration: Ensure that the readiness and liveness probe configurations are correctly defined in the pod's manifest. Verify that the specified endpoints, ports, timeouts, and success criteria match the actual setup of the application.
+
+Adjust resource limits: If the container is consistently failing the probe due to resource constraints, consider increasing the allocated resources (CPU or memory) for the container.
+
+Check network connectivity: Ensure that the application is reachable and responsive from within the container. Verify that the network configuration and any required dependencies are correctly set up.
+
+Update the application: If the probe failures are due to bugs or issues in the application itself, consider updating or debugging the application code to resolve the problem.
 	
 # Pod in 'CrashLoopBackOff' State - 'Readiness\Liveness probe failed: Get http://:8082/actuator/health: dial tcp :8082: connect: connection refused
 # Why were the endpoints unavailable for the readiness\liveness probes?
